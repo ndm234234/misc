@@ -142,7 +142,7 @@
             to { transform: rotate(360deg); }
         }
 
-        /* Полноэкранный режим — полная поддержка зума и панорамирования */
+        /* ===== ПОЛНОЭКРАННЫЙ РЕЖИМ БЕЗ ПОЛОС ПРОКРУТКИ ===== */
         .camera-card:fullscreen {
             background: #000;
             border-radius: 0;
@@ -153,6 +153,7 @@
             justify-content: center;
             border: none;
             position: relative;
+            overflow: hidden;
         }
 
         .camera-card:fullscreen .video-wrapper {
@@ -160,14 +161,14 @@
             width: 100%;
             height: 100vh;
             padding-top: 0;
-            overflow: auto;
-            -webkit-overflow-scrolling: touch;
+            overflow: hidden;
             touch-action: pinch-zoom;
-            cursor: grab;
         }
 
         .camera-card:fullscreen video {
-            position: relative;
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
             height: 100%;
             object-fit: contain;
@@ -181,6 +182,33 @@
             right: 0;
             background: rgba(0, 0, 0, 0.7);
             z-index: 30;
+        }
+
+        /* ===== КНОПКА ВЫХОДА ИЗ FULLSCREEN ===== */
+        .fs-exit-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 48px;
+            height: 48px;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 10001;
+            transition: all 0.2s ease;
+            font-size: 24px;
+            color: white;
+            font-weight: bold;
+        }
+
+        .fs-exit-btn:hover {
+            background: rgba(200, 50, 50, 0.9);
+            transform: scale(1.05);
         }
 
         /* Подсказка для жестов */
@@ -209,6 +237,13 @@
             }
             body {
                 padding: 16px;
+            }
+            .fs-exit-btn {
+                top: 12px;
+                right: 12px;
+                width: 40px;
+                height: 40px;
+                font-size: 20px;
             }
             .zoom-hint {
                 font-size: 0.65rem;
@@ -240,6 +275,7 @@
     ];
 
     let currentFullscreenCard = null;
+    let currentExitButton = null;
     let zoomHintTimeout = null;
 
     function getCameraTitle(url) {
@@ -259,7 +295,28 @@
         if (zoomHintTimeout) clearTimeout(zoomHintTimeout);
         zoomHintTimeout = setTimeout(() => {
             if (hint) hint.style.opacity = '0';
-        }, 4000);
+        }, 5000);
+    }
+
+    // Создать кнопку выхода
+    function createExitButton() {
+        if (currentExitButton) return;
+        const btn = document.createElement('div');
+        btn.className = 'fs-exit-btn';
+        btn.innerHTML = '✕';
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            document.exitFullscreen().catch(() => {});
+        };
+        document.body.appendChild(btn);
+        currentExitButton = btn;
+    }
+
+    function removeExitButton() {
+        if (currentExitButton) {
+            currentExitButton.remove();
+            currentExitButton = null;
+        }
     }
 
     // ==================== HLS И АВТОЗАПУСК ====================
@@ -428,32 +485,11 @@
             if (video.muted) video.muted = false;
             if (!document.fullscreenElement) {
                 try {
-                    await card.requestFullscreen({ navigationUI: "show" });
+                    await card.requestFullscreen({ navigationUI: "hide" });
                 } catch (err) {}
-            } else {
-                await document.exitFullscreen();
             }
         };
         card.addEventListener('click', onCardClick);
-        
-        // Двойной тап для выхода из полноэкранного режима
-        let lastTap = 0;
-        card.addEventListener('touchstart', (e) => {
-            const now = Date.now();
-            if (now - lastTap < 280) {
-                e.preventDefault();
-                if (document.fullscreenElement === card) {
-                    document.exitFullscreen();
-                }
-            }
-            lastTap = now;
-        });
-        card.addEventListener('dblclick', (e) => {
-            e.preventDefault();
-            if (document.fullscreenElement === card) {
-                document.exitFullscreen();
-            }
-        });
         
         return card;
     }
@@ -468,47 +504,34 @@
         });
     }
     
-    // ==================== ПОЛНОЭКРАННЫЙ РЕЖИМ С ПОДДЕРЖКОЙ ЗУМА ====================
+    // ==================== ПОЛНОЭКРАННЫЙ РЕЖИМ ====================
     function onFullscreenChange() {
         const fsElement = document.fullscreenElement;
         if (fsElement && fsElement.classList && fsElement.classList.contains('camera-card')) {
             currentFullscreenCard = fsElement;
+            
+            // Настраиваем для зума
             const wrapper = fsElement.querySelector('.video-wrapper');
             if (wrapper) {
-                // Включаем скролл и зум
-                wrapper.style.overflow = 'auto';
-                wrapper.style.webkitOverflowScrolling = 'touch';
                 wrapper.style.touchAction = 'pinch-zoom';
-                // Принудительно сбрасываем масштаб при входе в fullscreen
-                wrapper.scrollLeft = 0;
-                wrapper.scrollTop = 0;
             }
+            
+            // Запускаем видео
             const video = fsElement.querySelector('video');
             if (video) {
-                video.style.objectFit = 'contain';
-                video.style.width = '100%';
-                video.style.height = '100%';
                 if (video.paused) {
                     video.muted = true;
                     video.play().catch(()=>{});
                 }
                 if (video.muted) video.muted = false;
             }
+            
+            // Показываем кнопку выхода и подсказку
+            createExitButton();
             showZoomHint();
         } else if (currentFullscreenCard) {
-            // Восстанавливаем стили при выходе
-            if (currentFullscreenCard) {
-                const wrapper = currentFullscreenCard.querySelector('.video-wrapper');
-                if (wrapper) {
-                    wrapper.style.overflow = 'hidden';
-                    wrapper.style.touchAction = '';
-                }
-                const video = currentFullscreenCard.querySelector('video');
-                if (video) {
-                    video.style.objectFit = 'cover';
-                }
-            }
             currentFullscreenCard = null;
+            removeExitButton();
         }
     }
     
