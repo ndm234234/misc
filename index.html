@@ -144,7 +144,7 @@
             to { transform: rotate(360deg); }
         }
 
-        /* ===== ПОЛНОЭКРАННЫЙ ОВЕРЛЕЙ С МАСШТАБИРУЕМЫМ ВИДЕО ===== */
+        /* ===== ПОЛНОЭКРАННЫЙ ОВЕРЛЕЙ ===== */
         .fullscreen-overlay {
             position: fixed;
             top: 0;
@@ -297,6 +297,9 @@
         return match ? `CityBay ${match[1]}` : "Live Camera";
     }
 
+    // Храним информацию о том, в полноэкранном ли режиме видео и какой контейнер
+    let currentFullscreenData = null; // { overlay, originalParent, originalNextSibling, video, wrapper }
+
     // ==================== HLS И АВТОЗАПУСК ====================
     const videoRegistry = new Map();
 
@@ -409,8 +412,17 @@
         videoRegistry.set(video, { hls: video.hlsInstance, statusSpan, spinner, streamUrl });
     }
 
-    // ==================== ПОЛНОЭКРАННЫЙ РЕЖИМ С МАСШТАБИРОВАНИЕМ ВИДЕО ====================
-    function enterFullscreen(videoElement, title) {
+    // ==================== ПОЛНОЭКРАННЫЙ РЕЖИМ (БЕЗ ПЕРЕЗАПРОСА ВИДЕО) ====================
+    function enterFullscreen(videoElement, title, originalWrapper) {
+        // Если уже есть открытый полноэкранный режим, сначала закрываем его
+        if (currentFullscreenData) {
+            exitFullscreen();
+        }
+        
+        // Сохраняем исходное положение видео
+        const originalParent = originalWrapper.parentNode;
+        const originalNextSibling = originalWrapper.nextSibling;
+        
         // Создаём оверлей
         const overlay = document.createElement('div');
         overlay.className = 'fullscreen-overlay';
@@ -418,35 +430,19 @@
         const wrapper = document.createElement('div');
         wrapper.className = 'fullscreen-video-wrapper';
         
-        // Клонируем видео (чтобы не отрывать от исходного места)
-        const clonedVideo = document.createElement('video');
-        clonedVideo.setAttribute('playsinline', 'true');
-        clonedVideo.setAttribute('autoplay', 'true');
-        clonedVideo.setAttribute('preload', 'auto');
-        clonedVideo.controls = false;
-        clonedVideo.className = 'fullscreen-video';
+        // Изменяем стили видео для полноэкранного режима
+        videoElement.classList.add('fullscreen-video');
+        videoElement.style.position = 'relative';
+        videoElement.style.width = '100%';
+        videoElement.style.height = 'auto';
+        videoElement.style.maxHeight = '100%';
+        videoElement.style.objectFit = 'contain';
         
-        // Переносим поток из исходного видео в клон
-        if (videoElement.hlsInstance) {
-            const originalSrc = videoElement.hlsInstance.url;
-            if (Hls.isSupported()) {
-                const newHls = new Hls({
-                    debug: false,
-                    enableWorker: true,
-                    lowLatencyMode: true,
-                });
-                newHls.loadSource(originalSrc);
-                newHls.attachMedia(clonedVideo);
-                clonedVideo.hlsInstance = newHls;
-            }
-        } else if (videoElement.src) {
-            clonedVideo.src = videoElement.src;
+        // Убираем видео из исходного контейнера и помещаем в оверлей
+        if (originalWrapper.parentNode) {
+            originalWrapper.removeChild(videoElement);
         }
-        
-        // Запускаем видео
-        clonedVideo.play().catch(e => console.log("play in fullscreen", e));
-        
-        wrapper.appendChild(clonedVideo);
+        wrapper.appendChild(videoElement);
         overlay.appendChild(wrapper);
         
         // Кнопка выхода
@@ -454,11 +450,7 @@
         exitBtn.className = 'fullscreen-exit-btn';
         exitBtn.innerHTML = '✕';
         exitBtn.onclick = () => {
-            if (clonedVideo.hlsInstance) {
-                clonedVideo.hlsInstance.destroy();
-            }
-            overlay.remove();
-            document.body.style.overflow = '';
+            exitFullscreen();
         };
         overlay.appendChild(exitBtn);
         
@@ -477,6 +469,20 @@
         document.body.appendChild(overlay);
         document.body.style.overflow = 'hidden';
         
+        // Сохраняем данные для восстановления
+        currentFullscreenData = {
+            overlay: overlay,
+            originalParent: originalParent,
+            originalNextSibling: originalNextSibling,
+            originalWrapper: originalWrapper,
+            video: videoElement,
+            originalPosition: videoElement.style.position,
+            originalWidth: videoElement.style.width,
+            originalHeight: videoElement.style.height,
+            originalObjectFit: videoElement.style.objectFit,
+            originalClass: videoElement.className
+        };
+        
         // ========== ЖЕСТЫ ДЛЯ МАСШТАБИРОВАНИЯ И ПЕРЕМЕЩЕНИЯ ==========
         let scale = 1;
         let translateX = 0;
@@ -488,7 +494,7 @@
         let isPanning = false;
         
         function applyTransform() {
-            clonedVideo.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+            videoElement.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
         }
         
         function resetTransform() {
@@ -498,105 +504,153 @@
             applyTransform();
         }
         
-        // Обработчик касаний для зума и панорамирования
-        clonedVideo.addEventListener('touchstart', (e) => {
+        videoElement.addEventListener('touchstart', onTouchStart);
+        videoElement.addEventListener('touchmove', onTouchMove);
+        videoElement.addEventListener('touchend', onTouchEnd);
+        videoElement.addEventListener('dblclick', onDoubleClick);
+        
+        // Для мыши (десктоп)
+        let mouseDown = false;
+        let lastMouseX = 0, lastMouseY = 0;
+        function onMouseDown(e) {
+            if (scale > 1) {
+                e.preventDefault();
+                mouseDown = true;
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+                videoElement.style.cursor = 'grabbing';
+            }
+        }
+        function onMouseMove(e) {
+            if (mouseDown && scale > 1) {
+                const deltaX = e.clientX - lastMouseX;
+                const deltaY = e.clientY - lastMouseY;
+                translateX += deltaX;
+                translateY += deltaY;
+                const maxX = (videoElement.clientWidth * (scale - 1)) / 2;
+                const maxY = (videoElement.clientHeight * (scale - 1)) / 2;
+                translateX = Math.min(Math.max(translateX, -maxX), maxX);
+                translateY = Math.min(Math.max(translateY, -maxY), maxY);
+                applyTransform();
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+            }
+        }
+        function onMouseUp() {
+            mouseDown = false;
+            videoElement.style.cursor = scale > 1 ? 'grab' : 'default';
+        }
+        
+        videoElement.addEventListener('mousedown', onMouseDown);
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+        
+        videoElement.style.cursor = scale > 1 ? 'grab' : 'default';
+        
+        function onTouchStart(e) {
             e.preventDefault();
             const touches = e.touches;
             if (touches.length === 2) {
-                // Начало зума
                 const dx = touches[0].clientX - touches[1].clientX;
                 const dy = touches[0].clientY - touches[1].clientY;
                 initialDistance = Math.hypot(dx, dy);
                 initialScale = scale;
             } else if (touches.length === 1) {
-                // Начало панорамирования
                 isPanning = true;
                 lastTouchX = touches[0].clientX;
                 lastTouchY = touches[0].clientY;
             }
-        });
+        }
         
-        clonedVideo.addEventListener('touchmove', (e) => {
+        function onTouchMove(e) {
             e.preventDefault();
             const touches = e.touches;
-            
             if (touches.length === 2) {
-                // ЗУМ: масштабирование двумя пальцами
                 const dx = touches[0].clientX - touches[1].clientX;
                 const dy = touches[0].clientY - touches[1].clientY;
                 const distance = Math.hypot(dx, dy);
                 if (initialDistance > 0) {
                     let newScale = initialScale * (distance / initialDistance);
-                    newScale = Math.min(Math.max(newScale, 1), 5); // ограничиваем зум от 1x до 5x
+                    newScale = Math.min(Math.max(newScale, 1), 5);
                     scale = newScale;
                     applyTransform();
                 }
             } else if (touches.length === 1 && isPanning && scale > 1) {
-                // ПАНОРАМИРОВАНИЕ: перемещение одним пальцем (только если зум > 1)
                 const deltaX = touches[0].clientX - lastTouchX;
                 const deltaY = touches[0].clientY - lastTouchY;
                 translateX += deltaX;
                 translateY += deltaY;
-                
-                // Ограничения, чтобы видео не уезжало слишком далеко
-                const maxX = (clonedVideo.clientWidth * (scale - 1)) / 2;
-                const maxY = (clonedVideo.clientHeight * (scale - 1)) / 2;
+                const maxX = (videoElement.clientWidth * (scale - 1)) / 2;
+                const maxY = (videoElement.clientHeight * (scale - 1)) / 2;
                 translateX = Math.min(Math.max(translateX, -maxX), maxX);
                 translateY = Math.min(Math.max(translateY, -maxY), maxY);
-                
                 applyTransform();
                 lastTouchX = touches[0].clientX;
                 lastTouchY = touches[0].clientY;
             }
-        });
+        }
         
-        clonedVideo.addEventListener('touchend', (e) => {
+        function onTouchEnd(e) {
             if (e.touches.length < 2) {
                 initialDistance = 0;
             }
             if (e.touches.length === 0) {
                 isPanning = false;
             }
-        });
+        }
         
-        // Двойной тап для сброса масштаба
-        clonedVideo.addEventListener('dblclick', (e) => {
+        function onDoubleClick(e) {
             e.preventDefault();
             resetTransform();
-        });
+        }
         
-        // Для мыши (тестирование на десктопе)
-        let mouseDown = false;
-        let lastMouseX = 0, lastMouseY = 0;
-        clonedVideo.addEventListener('mousedown', (e) => {
-            if (scale > 1) {
-                e.preventDefault();
-                mouseDown = true;
-                lastMouseX = e.clientX;
-                lastMouseY = e.clientY;
-                clonedVideo.style.cursor = 'grabbing';
-            }
-        });
-        window.addEventListener('mousemove', (e) => {
-            if (mouseDown && scale > 1) {
-                const deltaX = e.clientX - lastMouseX;
-                const deltaY = e.clientY - lastMouseY;
-                translateX += deltaX;
-                translateY += deltaY;
-                const maxX = (clonedVideo.clientWidth * (scale - 1)) / 2;
-                const maxY = (clonedVideo.clientHeight * (scale - 1)) / 2;
-                translateX = Math.min(Math.max(translateX, -maxX), maxX);
-                translateY = Math.min(Math.max(translateY, -maxY), maxY);
-                applyTransform();
-                lastMouseX = e.clientX;
-                lastMouseY = e.clientY;
-            }
-        });
-        window.addEventListener('mouseup', () => {
-            mouseDown = false;
-            if (clonedVideo) clonedVideo.style.cursor = 'grab';
-        });
-        clonedVideo.style.cursor = scale > 1 ? 'grab' : 'default';
+        // Сохраняем обработчики для очистки
+        videoElement._fsHandlers = {
+            onTouchStart, onTouchMove, onTouchEnd, onDoubleClick,
+            onMouseDown, onMouseMove, onMouseUp
+        };
+    }
+    
+    function exitFullscreen() {
+        if (!currentFullscreenData) return;
+        
+        const data = currentFullscreenData;
+        
+        // Восстанавливаем видео в исходный контейнер
+        const video = data.video;
+        
+        // Удаляем обработчики жестов
+        if (video._fsHandlers) {
+            video.removeEventListener('touchstart', video._fsHandlers.onTouchStart);
+            video.removeEventListener('touchmove', video._fsHandlers.onTouchMove);
+            video.removeEventListener('touchend', video._fsHandlers.onTouchEnd);
+            video.removeEventListener('dblclick', video._fsHandlers.onDoubleClick);
+            video.removeEventListener('mousedown', video._fsHandlers.onMouseDown);
+            window.removeEventListener('mousemove', video._fsHandlers.onMouseMove);
+            window.removeEventListener('mouseup', video._fsHandlers.onMouseUp);
+            delete video._fsHandlers;
+        }
+        
+        // Восстанавливаем исходные стили видео
+        video.classList.remove('fullscreen-video');
+        video.style.position = 'absolute';
+        video.style.width = '100%';
+        video.style.height = '100%';
+        video.style.maxHeight = '';
+        video.style.objectFit = 'cover';
+        video.style.transform = '';
+        video.style.cursor = '';
+        
+        // Возвращаем видео в исходный wrapper
+        data.originalWrapper.appendChild(video);
+        
+        // Удаляем оверлей
+        if (data.overlay && data.overlay.parentNode) {
+            data.overlay.remove();
+        }
+        
+        document.body.style.overflow = '';
+        currentFullscreenData = null;
     }
 
     // ==================== СОЗДАНИЕ КАРТОЧКИ ====================
@@ -644,10 +698,10 @@
         
         initHLS(video, streamUrl, statusSpan, spinner);
         
-        // Клик по карточке: открываем в полноэкранном режиме
+        // Клик по карточке: открываем полноэкранный режим (без перезапроса видео)
         const onCardClick = (e) => {
             e.stopPropagation();
-            enterFullscreen(video, camTitle);
+            enterFullscreen(video, camTitle, videoWrapper);
         };
         card.addEventListener('click', onCardClick);
         
