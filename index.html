@@ -459,13 +459,7 @@
         titleDiv.className = 'fullscreen-title';
         titleDiv.innerText = title;
         overlay.appendChild(titleDiv);
-        
-        // Подсказка
-        const hint = document.createElement('div');
-        hint.className = 'zoom-hint-full';
-        hint.innerText = '🔍 Два пальца — масштабирование | Один палец — перемещение | ✕ — выход';
-        overlay.appendChild(hint);
-        
+               
         document.body.appendChild(overlay);
         document.body.style.overflow = 'hidden';
         
