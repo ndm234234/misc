@@ -19,7 +19,6 @@
             overflow-x: hidden;
         }
 
-        /* Сетка камер */
         .camera-grid {
             max-width: 1600px;
             margin: 0 auto;
@@ -145,7 +144,7 @@
             to { transform: rotate(360deg); }
         }
 
-        /* ===== ИМИТАЦИЯ ПОЛНОЭКРАННОГО РЕЖИМА (РАБОТАЕТ ЗУМ) ===== */
+        /* ===== ПОЛНОЭКРАННЫЙ ОВЕРЛЕЙ С МАСШТАБИРУЕМЫМ ВИДЕО ===== */
         .fullscreen-overlay {
             position: fixed;
             top: 0;
@@ -158,29 +157,32 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            touch-action: pinch-zoom;
-            overflow: auto;
-            -webkit-overflow-scrolling: touch;
+            overflow: hidden;
         }
 
-        .fullscreen-video-container {
+        .fullscreen-video-wrapper {
             width: 100%;
             height: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
-            overflow: auto;
-            -webkit-overflow-scrolling: touch;
-            touch-action: pinch-zoom;
+            overflow: hidden;
+            position: relative;
         }
 
-        .fullscreen-video-container video {
+        .fullscreen-video {
             position: relative;
             width: 100%;
             height: auto;
             max-height: 100%;
             object-fit: contain;
+            cursor: grab;
+            transition: transform 0.05s linear;
             transform-origin: center center;
+        }
+
+        .fullscreen-video:active {
+            cursor: grabbing;
         }
 
         .fullscreen-exit-btn {
@@ -407,24 +409,25 @@
         videoRegistry.set(video, { hls: video.hlsInstance, statusSpan, spinner, streamUrl });
     }
 
-    // ==================== ИМИТАЦИЯ ПОЛНОЭКРАННОГО РЕЖИМА ====================
+    // ==================== ПОЛНОЭКРАННЫЙ РЕЖИМ С МАСШТАБИРОВАНИЕМ ВИДЕО ====================
     function enterFullscreen(videoElement, title) {
         // Создаём оверлей
         const overlay = document.createElement('div');
         overlay.className = 'fullscreen-overlay';
         
-        const container = document.createElement('div');
-        container.className = 'fullscreen-video-container';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'fullscreen-video-wrapper';
         
         // Клонируем видео (чтобы не отрывать от исходного места)
-        const clonedVideo = videoElement.cloneNode(true);
+        const clonedVideo = document.createElement('video');
         clonedVideo.setAttribute('playsinline', 'true');
         clonedVideo.setAttribute('autoplay', 'true');
-        clonedVideo.muted = false;
+        clonedVideo.setAttribute('preload', 'auto');
+        clonedVideo.controls = false;
+        clonedVideo.className = 'fullscreen-video';
         
         // Переносим поток из исходного видео в клон
         if (videoElement.hlsInstance) {
-            // Копируем HLS настройки
             const originalSrc = videoElement.hlsInstance.url;
             if (Hls.isSupported()) {
                 const newHls = new Hls({
@@ -440,11 +443,11 @@
             clonedVideo.src = videoElement.src;
         }
         
-        // Запускаем клон
+        // Запускаем видео
         clonedVideo.play().catch(e => console.log("play in fullscreen", e));
         
-        container.appendChild(clonedVideo);
-        overlay.appendChild(container);
+        wrapper.appendChild(clonedVideo);
+        overlay.appendChild(wrapper);
         
         // Кнопка выхода
         const exitBtn = document.createElement('div');
@@ -468,19 +471,132 @@
         // Подсказка
         const hint = document.createElement('div');
         hint.className = 'zoom-hint-full';
-        hint.innerText = '🔍 Два пальца — масштабирование и перемещение';
+        hint.innerText = '🔍 Два пальца — масштабирование | Один палец — перемещение | ✕ — выход';
         overlay.appendChild(hint);
         
         document.body.appendChild(overlay);
         document.body.style.overflow = 'hidden';
         
-        // Блокируем скролл на overlay
-        overlay.addEventListener('touchmove', (e) => {
-            // Разрешаем скролл только внутри контейнера с видео (для зума)
-            if (e.target === overlay && !container.contains(e.target)) {
-                e.preventDefault();
+        // ========== ЖЕСТЫ ДЛЯ МАСШТАБИРОВАНИЯ И ПЕРЕМЕЩЕНИЯ ==========
+        let scale = 1;
+        let translateX = 0;
+        let translateY = 0;
+        let initialDistance = 0;
+        let initialScale = 1;
+        let lastTouchX = 0;
+        let lastTouchY = 0;
+        let isPanning = false;
+        
+        function applyTransform() {
+            clonedVideo.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+        }
+        
+        function resetTransform() {
+            scale = 1;
+            translateX = 0;
+            translateY = 0;
+            applyTransform();
+        }
+        
+        // Обработчик касаний для зума и панорамирования
+        clonedVideo.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touches = e.touches;
+            if (touches.length === 2) {
+                // Начало зума
+                const dx = touches[0].clientX - touches[1].clientX;
+                const dy = touches[0].clientY - touches[1].clientY;
+                initialDistance = Math.hypot(dx, dy);
+                initialScale = scale;
+            } else if (touches.length === 1) {
+                // Начало панорамирования
+                isPanning = true;
+                lastTouchX = touches[0].clientX;
+                lastTouchY = touches[0].clientY;
             }
-        }, { passive: false });
+        });
+        
+        clonedVideo.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touches = e.touches;
+            
+            if (touches.length === 2) {
+                // ЗУМ: масштабирование двумя пальцами
+                const dx = touches[0].clientX - touches[1].clientX;
+                const dy = touches[0].clientY - touches[1].clientY;
+                const distance = Math.hypot(dx, dy);
+                if (initialDistance > 0) {
+                    let newScale = initialScale * (distance / initialDistance);
+                    newScale = Math.min(Math.max(newScale, 1), 5); // ограничиваем зум от 1x до 5x
+                    scale = newScale;
+                    applyTransform();
+                }
+            } else if (touches.length === 1 && isPanning && scale > 1) {
+                // ПАНОРАМИРОВАНИЕ: перемещение одним пальцем (только если зум > 1)
+                const deltaX = touches[0].clientX - lastTouchX;
+                const deltaY = touches[0].clientY - lastTouchY;
+                translateX += deltaX;
+                translateY += deltaY;
+                
+                // Ограничения, чтобы видео не уезжало слишком далеко
+                const maxX = (clonedVideo.clientWidth * (scale - 1)) / 2;
+                const maxY = (clonedVideo.clientHeight * (scale - 1)) / 2;
+                translateX = Math.min(Math.max(translateX, -maxX), maxX);
+                translateY = Math.min(Math.max(translateY, -maxY), maxY);
+                
+                applyTransform();
+                lastTouchX = touches[0].clientX;
+                lastTouchY = touches[0].clientY;
+            }
+        });
+        
+        clonedVideo.addEventListener('touchend', (e) => {
+            if (e.touches.length < 2) {
+                initialDistance = 0;
+            }
+            if (e.touches.length === 0) {
+                isPanning = false;
+            }
+        });
+        
+        // Двойной тап для сброса масштаба
+        clonedVideo.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            resetTransform();
+        });
+        
+        // Для мыши (тестирование на десктопе)
+        let mouseDown = false;
+        let lastMouseX = 0, lastMouseY = 0;
+        clonedVideo.addEventListener('mousedown', (e) => {
+            if (scale > 1) {
+                e.preventDefault();
+                mouseDown = true;
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+                clonedVideo.style.cursor = 'grabbing';
+            }
+        });
+        window.addEventListener('mousemove', (e) => {
+            if (mouseDown && scale > 1) {
+                const deltaX = e.clientX - lastMouseX;
+                const deltaY = e.clientY - lastMouseY;
+                translateX += deltaX;
+                translateY += deltaY;
+                const maxX = (clonedVideo.clientWidth * (scale - 1)) / 2;
+                const maxY = (clonedVideo.clientHeight * (scale - 1)) / 2;
+                translateX = Math.min(Math.max(translateX, -maxX), maxX);
+                translateY = Math.min(Math.max(translateY, -maxY), maxY);
+                applyTransform();
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+            }
+        });
+        window.addEventListener('mouseup', () => {
+            mouseDown = false;
+            if (clonedVideo) clonedVideo.style.cursor = 'grab';
+        });
+        clonedVideo.style.cursor = scale > 1 ? 'grab' : 'default';
     }
 
     // ==================== СОЗДАНИЕ КАРТОЧКИ ====================
@@ -528,7 +644,7 @@
         
         initHLS(video, streamUrl, statusSpan, spinner);
         
-        // Клик по карточке: открываем в полноэкранном режиме (имитация)
+        // Клик по карточке: открываем в полноэкранном режиме
         const onCardClick = (e) => {
             e.stopPropagation();
             enterFullscreen(video, camTitle);
