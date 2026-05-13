@@ -144,7 +144,7 @@
             to { transform: rotate(360deg); }
         }
 
-        /* ===== ПОЛНОЭКРАННЫЙ ОВЕРЛЕЙ ===== */
+        /* Полноэкранный оверлей */
         .fullscreen-overlay {
             position: fixed;
             top: 0;
@@ -177,8 +177,8 @@
             max-height: 100%;
             object-fit: contain;
             cursor: grab;
-            transition: transform 0.05s linear;
             transform-origin: center center;
+            will-change: transform;
         }
 
         .fullscreen-video:active {
@@ -226,22 +226,6 @@
             pointer-events: none;
         }
 
-        .zoom-hint-full {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(12px);
-            padding: 6px 16px;
-            border-radius: 40px;
-            color: #ccc;
-            font-size: 0.7rem;
-            z-index: 10001;
-            pointer-events: none;
-            white-space: nowrap;
-        }
-
         @media (max-width: 760px) {
             .camera-grid {
                 grid-template-columns: 1fr;
@@ -262,10 +246,6 @@
                 left: 12px;
                 font-size: 0.75rem;
                 padding: 6px 12px;
-            }
-            .zoom-hint-full {
-                font-size: 0.6rem;
-                bottom: 12px;
             }
         }
     </style>
@@ -297,8 +277,7 @@
         return match ? `CityBay ${match[1]}` : "Live Camera";
     }
 
-    // Храним информацию о том, в полноэкранном ли режиме видео и какой контейнер
-    let currentFullscreenData = null; // { overlay, originalParent, originalNextSibling, video, wrapper }
+    let currentFullscreenData = null;
 
     // ==================== HLS И АВТОЗАПУСК ====================
     const videoRegistry = new Map();
@@ -412,40 +391,35 @@
         videoRegistry.set(video, { hls: video.hlsInstance, statusSpan, spinner, streamUrl });
     }
 
-    // ==================== ПОЛНОЭКРАННЫЙ РЕЖИМ (БЕЗ ПЕРЕЗАПРОСА ВИДЕО) ====================
+    // ==================== ПОЛНОЭКРАННЫЙ РЕЖИМ ====================
     function enterFullscreen(videoElement, title, originalWrapper) {
-        // Если уже есть открытый полноэкранный режим, сначала закрываем его
         if (currentFullscreenData) {
             exitFullscreen();
         }
         
-        // Сохраняем исходное положение видео
         const originalParent = originalWrapper.parentNode;
         const originalNextSibling = originalWrapper.nextSibling;
         
-        // Создаём оверлей
         const overlay = document.createElement('div');
         overlay.className = 'fullscreen-overlay';
         
         const wrapper = document.createElement('div');
         wrapper.className = 'fullscreen-video-wrapper';
         
-        // Изменяем стили видео для полноэкранного режима
         videoElement.classList.add('fullscreen-video');
         videoElement.style.position = 'relative';
         videoElement.style.width = '100%';
         videoElement.style.height = 'auto';
         videoElement.style.maxHeight = '100%';
         videoElement.style.objectFit = 'contain';
+        videoElement.style.transform = 'translate(0px, 0px) scale(1)';
         
-        // Убираем видео из исходного контейнера и помещаем в оверлей
         if (originalWrapper.parentNode) {
             originalWrapper.removeChild(videoElement);
         }
         wrapper.appendChild(videoElement);
         overlay.appendChild(wrapper);
         
-        // Кнопка выхода
         const exitBtn = document.createElement('div');
         exitBtn.className = 'fullscreen-exit-btn';
         exitBtn.innerHTML = '✕';
@@ -454,16 +428,14 @@
         };
         overlay.appendChild(exitBtn);
         
-        // Заголовок
         const titleDiv = document.createElement('div');
         titleDiv.className = 'fullscreen-title';
         titleDiv.innerText = title;
         overlay.appendChild(titleDiv);
-               
+        
         document.body.appendChild(overlay);
         document.body.style.overflow = 'hidden';
         
-        // Сохраняем данные для восстановления
         currentFullscreenData = {
             overlay: overlay,
             originalParent: originalParent,
@@ -477,12 +449,14 @@
             originalClass: videoElement.className
         };
         
-        // ========== ЖЕСТЫ ДЛЯ МАСШТАБИРОВАНИЯ И ПЕРЕМЕЩЕНИЯ ==========
+        // ========== ЖЕСТЫ С ПЛАВНЫМ ЗУМОМ И БЕЗ СДВИГА ==========
         let scale = 1;
         let translateX = 0;
         let translateY = 0;
-        let initialDistance = 0;
+        let initialPinchDistance = 0;
         let initialScale = 1;
+        let initialTranslateX = 0;
+        let initialTranslateY = 0;
         let lastTouchX = 0;
         let lastTouchY = 0;
         let isPanning = false;
@@ -498,8 +472,102 @@
             applyTransform();
         }
         
-        videoElement.addEventListener('touchstart', onTouchStart);
-        videoElement.addEventListener('touchmove', onTouchMove);
+        // Получить центр между двумя пальцами
+        function getPinchCenter(touches) {
+            return {
+                x: (touches[0].clientX + touches[1].clientX) / 2,
+                y: (touches[0].clientY + touches[1].clientY) / 2
+            };
+        }
+        
+        function onTouchStart(e) {
+            e.preventDefault();
+            const touches = e.touches;
+            if (touches.length === 2) {
+                const dx = touches[0].clientX - touches[1].clientX;
+                const dy = touches[0].clientY - touches[1].clientY;
+                initialPinchDistance = Math.hypot(dx, dy);
+                initialScale = scale;
+                // Запоминаем текущий сдвиг перед началом зума
+                initialTranslateX = translateX;
+                initialTranslateY = translateY;
+                isPanning = false;
+            } else if (touches.length === 1) {
+                isPanning = true;
+                lastTouchX = touches[0].clientX;
+                lastTouchY = touches[0].clientY;
+            }
+        }
+        
+        function onTouchMove(e) {
+            e.preventDefault();
+            const touches = e.touches;
+            if (touches.length === 2 && initialPinchDistance > 0) {
+                const dx = touches[0].clientX - touches[1].clientX;
+                const dy = touches[0].clientY - touches[1].clientY;
+                const distance = Math.hypot(dx, dy);
+                let newScale = initialScale * (distance / initialPinchDistance);
+                newScale = Math.min(Math.max(newScale, 1), 5);
+                
+                if (newScale !== scale) {
+                    // При зуме сохраняем центр масштабирования — изображение не дёргается
+                    const center = getPinchCenter(touches);
+                    const rect = videoElement.getBoundingClientRect();
+                    const centerX = center.x - rect.left;
+                    const centerY = center.y - rect.top;
+                    
+                    const scaleRatio = newScale / scale;
+                    
+                    // Корректируем сдвиг, чтобы центр масштабирования оставался на месте
+                    translateX = initialTranslateX * (newScale / initialScale) + (centerX - centerX * scaleRatio);
+                    translateY = initialTranslateY * (newScale / initialScale) + (centerY - centerY * scaleRatio);
+                    
+                    scale = newScale;
+                    
+                    // Ограничиваем сдвиг
+                    const maxX = (videoElement.clientWidth * (scale - 1)) / 2;
+                    const maxY = (videoElement.clientHeight * (scale - 1)) / 2;
+                    translateX = Math.min(Math.max(translateX, -maxX), maxX);
+                    translateY = Math.min(Math.max(translateY, -maxY), maxY);
+                    
+                    applyTransform();
+                }
+            } else if (touches.length === 1 && isPanning && scale > 1) {
+                const deltaX = touches[0].clientX - lastTouchX;
+                const deltaY = touches[0].clientY - lastTouchY;
+                let newTranslateX = translateX + deltaX;
+                let newTranslateY = translateY + deltaY;
+                
+                const maxX = (videoElement.clientWidth * (scale - 1)) / 2;
+                const maxY = (videoElement.clientHeight * (scale - 1)) / 2;
+                newTranslateX = Math.min(Math.max(newTranslateX, -maxX), maxX);
+                newTranslateY = Math.min(Math.max(newTranslateY, -maxY), maxY);
+                
+                translateX = newTranslateX;
+                translateY = newTranslateY;
+                applyTransform();
+                
+                lastTouchX = touches[0].clientX;
+                lastTouchY = touches[0].clientY;
+            }
+        }
+        
+        function onTouchEnd(e) {
+            if (e.touches.length < 2) {
+                initialPinchDistance = 0;
+            }
+            if (e.touches.length === 0) {
+                isPanning = false;
+            }
+        }
+        
+        function onDoubleClick(e) {
+            e.preventDefault();
+            resetTransform();
+        }
+        
+        videoElement.addEventListener('touchstart', onTouchStart, { passive: false });
+        videoElement.addEventListener('touchmove', onTouchMove, { passive: false });
         videoElement.addEventListener('touchend', onTouchEnd);
         videoElement.addEventListener('dblclick', onDoubleClick);
         
@@ -519,12 +587,14 @@
             if (mouseDown && scale > 1) {
                 const deltaX = e.clientX - lastMouseX;
                 const deltaY = e.clientY - lastMouseY;
-                translateX += deltaX;
-                translateY += deltaY;
+                let newTranslateX = translateX + deltaX;
+                let newTranslateY = translateY + deltaY;
                 const maxX = (videoElement.clientWidth * (scale - 1)) / 2;
                 const maxY = (videoElement.clientHeight * (scale - 1)) / 2;
-                translateX = Math.min(Math.max(translateX, -maxX), maxX);
-                translateY = Math.min(Math.max(translateY, -maxY), maxY);
+                newTranslateX = Math.min(Math.max(newTranslateX, -maxX), maxX);
+                newTranslateY = Math.min(Math.max(newTranslateY, -maxY), maxY);
+                translateX = newTranslateX;
+                translateY = newTranslateY;
                 applyTransform();
                 lastMouseX = e.clientX;
                 lastMouseY = e.clientY;
@@ -541,64 +611,6 @@
         
         videoElement.style.cursor = scale > 1 ? 'grab' : 'default';
         
-        function onTouchStart(e) {
-            e.preventDefault();
-            const touches = e.touches;
-            if (touches.length === 2) {
-                const dx = touches[0].clientX - touches[1].clientX;
-                const dy = touches[0].clientY - touches[1].clientY;
-                initialDistance = Math.hypot(dx, dy);
-                initialScale = scale;
-            } else if (touches.length === 1) {
-                isPanning = true;
-                lastTouchX = touches[0].clientX;
-                lastTouchY = touches[0].clientY;
-            }
-        }
-        
-        function onTouchMove(e) {
-            e.preventDefault();
-            const touches = e.touches;
-            if (touches.length === 2) {
-                const dx = touches[0].clientX - touches[1].clientX;
-                const dy = touches[0].clientY - touches[1].clientY;
-                const distance = Math.hypot(dx, dy);
-                if (initialDistance > 0) {
-                    let newScale = initialScale * (distance / initialDistance);
-                    newScale = Math.min(Math.max(newScale, 1), 5);
-                    scale = newScale;
-                    applyTransform();
-                }
-            } else if (touches.length === 1 && isPanning && scale > 1) {
-                const deltaX = touches[0].clientX - lastTouchX;
-                const deltaY = touches[0].clientY - lastTouchY;
-                translateX += deltaX;
-                translateY += deltaY;
-                const maxX = (videoElement.clientWidth * (scale - 1)) / 2;
-                const maxY = (videoElement.clientHeight * (scale - 1)) / 2;
-                translateX = Math.min(Math.max(translateX, -maxX), maxX);
-                translateY = Math.min(Math.max(translateY, -maxY), maxY);
-                applyTransform();
-                lastTouchX = touches[0].clientX;
-                lastTouchY = touches[0].clientY;
-            }
-        }
-        
-        function onTouchEnd(e) {
-            if (e.touches.length < 2) {
-                initialDistance = 0;
-            }
-            if (e.touches.length === 0) {
-                isPanning = false;
-            }
-        }
-        
-        function onDoubleClick(e) {
-            e.preventDefault();
-            resetTransform();
-        }
-        
-        // Сохраняем обработчики для очистки
         videoElement._fsHandlers = {
             onTouchStart, onTouchMove, onTouchEnd, onDoubleClick,
             onMouseDown, onMouseMove, onMouseUp
@@ -609,11 +621,8 @@
         if (!currentFullscreenData) return;
         
         const data = currentFullscreenData;
-        
-        // Восстанавливаем видео в исходный контейнер
         const video = data.video;
         
-        // Удаляем обработчики жестов
         if (video._fsHandlers) {
             video.removeEventListener('touchstart', video._fsHandlers.onTouchStart);
             video.removeEventListener('touchmove', video._fsHandlers.onTouchMove);
@@ -625,7 +634,6 @@
             delete video._fsHandlers;
         }
         
-        // Восстанавливаем исходные стили видео
         video.classList.remove('fullscreen-video');
         video.style.position = 'absolute';
         video.style.width = '100%';
@@ -635,10 +643,8 @@
         video.style.transform = '';
         video.style.cursor = '';
         
-        // Возвращаем видео в исходный wrapper
         data.originalWrapper.appendChild(video);
         
-        // Удаляем оверлей
         if (data.overlay && data.overlay.parentNode) {
             data.overlay.remove();
         }
@@ -692,7 +698,6 @@
         
         initHLS(video, streamUrl, statusSpan, spinner);
         
-        // Клик по карточке: открываем полноэкранный режим (без перезапроса видео)
         const onCardClick = (e) => {
             e.stopPropagation();
             enterFullscreen(video, camTitle, videoWrapper);
@@ -712,7 +717,6 @@
         });
     }
     
-    // ==================== ЗАПУСК ====================
     document.addEventListener('DOMContentLoaded', () => {
         renderGrid();
     });
