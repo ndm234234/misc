@@ -2,8 +2,8 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>CityBay</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>CityBay · Камеры</title>
     <style>
         * {
             margin: 0;
@@ -18,21 +18,9 @@
             padding: 20px;
         }
 
+        /* Заголовок скрыт */
         .header {
-            text-align: center;
-            margin-bottom: 28px;
-        }
-
-        .header h1 {
-            font-size: 2rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #eef4ff, #7faeff);
-            background-clip: text;
-            -webkit-background-clip: text;
-            color: transparent;
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
+            display: none;
         }
 
         .camera-grid {
@@ -159,7 +147,7 @@
             to { transform: rotate(360deg); }
         }
 
-        /* Полноэкранный режим */
+        /* Полноэкранный режим — поддерживаем зум */
         .camera-card:fullscreen {
             background: #000;
             border-radius: 0;
@@ -170,19 +158,28 @@
             justify-content: center;
             border: none;
             position: relative;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
         .camera-card:fullscreen .video-wrapper {
             padding-top: 0;
             height: 100vh;
+            width: 100%;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pinch-zoom;
         }
 
         .camera-card:fullscreen video {
             object-fit: contain;
+            width: 100%;
+            height: 100%;
+            transform-origin: center center;
         }
 
         .camera-card:fullscreen .cam-info {
-            position: absolute;
+            position: fixed;
             bottom: 0;
             left: 0;
             right: 0;
@@ -190,98 +187,23 @@
             z-index: 30;
         }
 
-        /* ===== НАВИГАЦИОННЫЕ КНОПКИ (всегда видны в fullscreen) ===== */
-        .fs-nav-btn {
-            position: fixed;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 70px;
-            height: 100px;
-            background: rgba(0, 0, 0, 0.65);
-            backdrop-filter: blur(12px);
-            border-radius: 50px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            z-index: 10000;
-            transition: all 0.2s ease;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-        }
-
-        .fs-nav-btn:hover {
-            background: rgba(0, 0, 0, 0.9);
-            transform: translateY(-50%) scale(1.08);
-            border-color: rgba(100, 150, 255, 0.9);
-        }
-
-        .fs-nav-btn.left {
-            left: 25px;
-        }
-
-        .fs-nav-btn.right {
-            right: 25px;
-        }
-
-        .fs-nav-btn svg {
-            width: 42px;
-            height: 42px;
-            stroke: white;
-            stroke-width: 2.5;
-            fill: none;
-            filter: drop-shadow(0 0 3px rgba(0,0,0,0.5));
-        }
-
-        .fs-counter {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(12px);
-            padding: 8px 20px;
-            border-radius: 50px;
-            color: white;
-            font-size: 1rem;
-            font-weight: 700;
-            z-index: 10000;
-            font-family: monospace;
-            letter-spacing: 1px;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            pointer-events: none;
-        }
-
-        .fs-title {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(12px);
-            padding: 8px 20px;
-            border-radius: 50px;
-            color: #bbdbff;
-            font-size: 0.9rem;
-            font-weight: 600;
-            z-index: 10000;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            pointer-events: none;
-        }
-
-        .fs-hint {
+        /* Подсказка о зуме */
+        .zoom-hint {
             position: fixed;
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.6);
             backdrop-filter: blur(12px);
-            padding: 6px 18px;
-            border-radius: 50px;
+            padding: 6px 16px;
+            border-radius: 40px;
             color: #ccc;
-            font-size: 0.75rem;
-            z-index: 10000;
+            font-size: 0.7rem;
+            z-index: 100;
             pointer-events: none;
             white-space: nowrap;
             font-weight: 500;
+            transition: opacity 0.3s;
         }
 
         @media (max-width: 760px) {
@@ -292,52 +214,19 @@
             body {
                 padding: 16px;
             }
-            .header h1 {
-                font-size: 1.6rem;
-            }
-            .fs-nav-btn {
-                width: 50px;
-                height: 70px;
-            }
-            .fs-nav-btn svg {
-                width: 30px;
-                height: 30px;
-            }
-            .fs-nav-btn.left {
-                left: 12px;
-            }
-            .fs-nav-btn.right {
-                right: 12px;
-            }
-            .fs-counter {
-                font-size: 0.8rem;
-                padding: 5px 14px;
-                top: 12px;
-                right: 12px;
-            }
-            .fs-title {
-                font-size: 0.7rem;
-                padding: 5px 14px;
-                top: 12px;
-                left: 12px;
-            }
-            .fs-hint {
+            .zoom-hint {
                 font-size: 0.6rem;
                 bottom: 12px;
-                white-space: nowrap;
             }
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
 </head>
 <body>
-    <div class="header">
-        <h1>📡 CityBay</h1>
-    </div>
     <div class="camera-grid" id="cameraGrid"></div>
 
 <script>
-    // ==================== СПИСОК КАМЕР ====================
+    // ==================== ВСЕ ПОТОКИ ====================
     const STREAMS = [
         "https://rtsp2.videocam.online/live/CityBay2.stream/playlist.m3u8",
         "https://rtsp2.videocam.online/live/CityBay3.stream/playlist.m3u8",
@@ -354,9 +243,8 @@
         "https://rtsp2.videocam.online/live/CityBay14.stream/playlist.m3u8"
     ];
 
-    // Глобальные переменные для навигации в полноэкранном режиме
     let currentFullscreenCard = null;
-    let activeNavElements = null; // { leftBtn, rightBtn, counter, title, hint }
+    let zoomHintTimeout = null;
 
     // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
     function getCameraTitle(url) {
@@ -364,123 +252,20 @@
         return match ? `CityBay ${match[1]}` : "Live Camera";
     }
 
-    function getCameraNumberFromCard(card) {
-        const idx = parseInt(card.dataset.idx);
-        if (!isNaN(idx) && STREAMS[idx]) return idx + 1;
-        return null;
-    }
-
-    function getStreamUrlFromCard(card) {
-        const idx = parseInt(card.dataset.idx);
-        if (!isNaN(idx) && STREAMS[idx]) return STREAMS[idx];
-        return null;
-    }
-
-    // Обновить текст счётчика и заголовка для текущей карточки
-    function updateFullscreenUI(card) {
-        if (!activeNavElements) return;
-        const allCards = Array.from(document.querySelectorAll('.camera-card'));
-        const currentIndex = allCards.indexOf(card);
-        if (currentIndex !== -1 && activeNavElements.counter) {
-            activeNavElements.counter.innerText = `${currentIndex + 1} / ${allCards.length}`;
+    // Показать подсказку о зуме
+    function showZoomHint() {
+        let hint = document.querySelector('.zoom-hint');
+        if (!hint) {
+            hint = document.createElement('div');
+            hint.className = 'zoom-hint';
+            hint.innerText = '🔍 Два пальца — масштабирование';
+            document.body.appendChild(hint);
         }
-        const streamUrl = getStreamUrlFromCard(card);
-        if (streamUrl && activeNavElements.title) {
-            activeNavElements.title.innerText = getCameraTitle(streamUrl);
-        }
-    }
-
-    // Переключение на другую камеру (delta = -1 назад, +1 вперёд)
-    function switchToCamera(delta) {
-        if (!currentFullscreenCard) return;
-        const allCards = Array.from(document.querySelectorAll('.camera-card'));
-        const currentIndex = allCards.indexOf(currentFullscreenCard);
-        let newIndex = currentIndex + delta;
-        if (newIndex < 0) newIndex = allCards.length - 1;
-        if (newIndex >= allCards.length) newIndex = 0;
-        const newCard = allCards[newIndex];
-        if (newCard && newCard !== currentFullscreenCard) {
-            // Выходим из полноэкранного режима текущей карточки
-            document.exitFullscreen().then(() => {
-                // Небольшая задержка для стабильности
-                setTimeout(() => {
-                    // Запускаем видео на новой карточке (если на паузе)
-                    const newVideo = newCard.querySelector('video');
-                    if (newVideo && newVideo.paused) {
-                        newVideo.muted = true;
-                        newVideo.play().catch(() => {});
-                    }
-                    if (newVideo && newVideo.muted) {
-                        newVideo.muted = false;
-                    }
-                    // Открываем новую карточку в полноэкранном режиме
-                    newCard.requestFullscreen({ navigationUI: "show" }).catch(e => console.log("fullscreen error", e));
-                }, 80);
-            }).catch(err => console.log("exit fullscreen error", err));
-        }
-    }
-
-    // Удалить элементы навигации
-    function removeNavigation() {
-        if (activeNavElements) {
-            if (activeNavElements.leftBtn) activeNavElements.leftBtn.remove();
-            if (activeNavElements.rightBtn) activeNavElements.rightBtn.remove();
-            if (activeNavElements.counter) activeNavElements.counter.remove();
-            if (activeNavElements.title) activeNavElements.title.remove();
-            if (activeNavElements.hint) activeNavElements.hint.remove();
-            activeNavElements = null;
-        }
-    }
-
-    // Создать и показать элементы навигации (кнопки, счётчик, заголовок)
-    function createNavigation(card) {
-        // Удаляем старые, если были
-        removeNavigation();
-        
-        const allCards = Array.from(document.querySelectorAll('.camera-card'));
-        const currentIndex = allCards.indexOf(card);
-        
-        // Левая кнопка
-        const leftBtn = document.createElement('div');
-        leftBtn.className = 'fs-nav-btn left';
-        leftBtn.innerHTML = '<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>';
-        leftBtn.onclick = (e) => {
-            e.stopPropagation();
-            switchToCamera(-1);
-        };
-        
-        // Правая кнопка
-        const rightBtn = document.createElement('div');
-        rightBtn.className = 'fs-nav-btn right';
-        rightBtn.innerHTML = '<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>';
-        rightBtn.onclick = (e) => {
-            e.stopPropagation();
-            switchToCamera(1);
-        };
-        
-        // Счётчик
-        const counter = document.createElement('div');
-        counter.className = 'fs-counter';
-        counter.innerText = `${currentIndex + 1} / ${allCards.length}`;
-        
-        // Заголовок камеры
-        const streamUrl = getStreamUrlFromCard(card);
-        const title = document.createElement('div');
-        title.className = 'fs-title';
-        title.innerText = streamUrl ? getCameraTitle(streamUrl) : 'CityBay';
-        
-        // Подсказка
-        const hint = document.createElement('div');
-        hint.className = 'fs-hint';
-        hint.innerText = '← → или свайп — листать | ESC — выход';
-        
-        document.body.appendChild(leftBtn);
-        document.body.appendChild(rightBtn);
-        document.body.appendChild(counter);
-        document.body.appendChild(title);
-        document.body.appendChild(hint);
-        
-        activeNavElements = { leftBtn, rightBtn, counter, title, hint };
+        hint.style.opacity = '1';
+        if (zoomHintTimeout) clearTimeout(zoomHintTimeout);
+        zoomHintTimeout = setTimeout(() => {
+            if (hint) hint.style.opacity = '0';
+        }, 3000);
     }
 
     // ==================== HLS И АВТОЗАПУСК ====================
@@ -595,7 +380,7 @@
         videoRegistry.set(video, { hls: video.hlsInstance, statusSpan, spinner, streamUrl });
     }
 
-    // ==================== СОЗДАНИЕ КАРТОЧКИ КАМЕРЫ ====================
+    // ==================== СОЗДАНИЕ КАРТОЧКИ ====================
     function createCameraCard(streamUrl, idx) {
         const card = document.createElement('div');
         card.className = 'camera-card';
@@ -610,6 +395,9 @@
         video.setAttribute('autoplay', 'true');
         video.setAttribute('muted', 'true');
         video.controls = false;
+        
+        // Разрешаем зум на видео (через CSS)
+        video.style.transformOrigin = 'center center';
         
         const spinner = document.createElement('div');
         spinner.className = 'loading-spinner';
@@ -639,7 +427,7 @@
         
         initHLS(video, streamUrl, statusSpan, spinner);
         
-        // Клик по карточке: вход в полноэкранный режим + запуск видео
+        // Клик по карточке: полноэкранный режим
         const onCardClick = async (e) => {
             e.stopPropagation();
             if (video.paused) {
@@ -657,82 +445,29 @@
         };
         card.addEventListener('click', onCardClick);
         
-        // Обработчик полноэкранного события для этой карточки
-        card.addEventListener('fullscreenchange', () => {
-            if (document.fullscreenElement === card) {
-                // Вошли в полноэкранный режим
-                currentFullscreenCard = card;
-                createNavigation(card);
-                // Убедимся, что видео играет и снят mute
-                if (video.paused) {
-                    video.muted = true;
-                    video.play().catch(()=>{});
-                }
-                if (video.muted) video.muted = false;
-                // Обновляем UI при изменении
-                updateFullscreenUI(card);
-            } else if (currentFullscreenCard === card) {
-                // Вышли из полноэкранного режима
-                currentFullscreenCard = null;
-                removeNavigation();
-            }
-        });
-        
-        // Свайп влево/вправо для навигации (только когда карточка в fullscreen)
-        let touchStartX = null;
-        card.addEventListener('touchstart', (e) => {
-            touchStartX = e.touches[0].clientX;
-        }, { passive: true });
-        card.addEventListener('touchmove', (e) => {
-            if (!document.fullscreenElement || document.fullscreenElement !== card) return;
-            if (touchStartX === null) return;
-            const deltaX = e.touches[0].clientX - touchStartX;
-            if (Math.abs(deltaX) > 50) {
-                e.preventDefault();
-                if (deltaX > 0) switchToCamera(-1);
-                else switchToCamera(1);
-                touchStartX = null;
-            }
-        }, { passive: false });
-        
-        // Глобальная клавиатура (работает только в полноэкранном режиме)
-        const onKeyDown = (e) => {
-            if (!document.fullscreenElement) return;
-            if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                switchToCamera(-1);
-            } else if (e.key === 'ArrowRight') {
-                e.preventDefault();
-                switchToCamera(1);
-            }
-        };
-        document.addEventListener('keydown', onKeyDown);
-        card._keyHandler = onKeyDown;
-        
-        // Двойной тап для выхода/входа (необязательно, но оставим)
+        // Двойной тап для выхода из полноэкранного режима (удобно)
         let lastTap = 0;
         card.addEventListener('touchstart', (e) => {
             const now = Date.now();
             if (now - lastTap < 280) {
                 e.preventDefault();
-                if (video.paused) { video.muted = true; video.play().catch(()=>{}); }
-                if (video.muted) video.muted = false;
-                if (!document.fullscreenElement) card.requestFullscreen().catch(()=>{});
-                else document.exitFullscreen();
+                if (document.fullscreenElement === card) {
+                    document.exitFullscreen();
+                }
             }
             lastTap = now;
         });
         card.addEventListener('dblclick', (e) => {
             e.preventDefault();
-            if (video.paused) { video.muted = true; video.play().catch(()=>{}); }
-            if (video.muted) video.muted = false;
-            if (!document.fullscreenElement) card.requestFullscreen().catch(()=>{});
-            else document.exitFullscreen();
+            if (document.fullscreenElement === card) {
+                document.exitFullscreen();
+            }
         });
         
         return card;
     }
     
+    // ==================== ОТРИСОВКА СЕТКИ ====================
     function renderGrid() {
         const grid = document.getElementById('cameraGrid');
         if (!grid) return;
@@ -743,8 +478,58 @@
         });
     }
     
+    // ==================== ПОЛНОЭКРАННЫЙ РЕЖИМ ====================
+    function onFullscreenChange() {
+        const fsElement = document.fullscreenElement;
+        if (fsElement && fsElement.classList && fsElement.classList.contains('camera-card')) {
+            currentFullscreenCard = fsElement;
+            // Включаем поддержку зума на контейнере
+            const wrapper = fsElement.querySelector('.video-wrapper');
+            const video = fsElement.querySelector('video');
+            
+            if (wrapper) {
+                wrapper.style.overflow = 'auto';
+                wrapper.style.webkitOverflowScrolling = 'touch';
+                wrapper.style.touchAction = 'pinch-zoom';
+                // Разрешаем скролл для зума
+                wrapper.style.cursor = 'grab';
+            }
+            if (video) {
+                video.style.objectFit = 'contain';
+                video.style.width = '100%';
+                video.style.height = '100%';
+            }
+            
+            // Показываем подсказку о зуме
+            showZoomHint();
+            
+            // Запускаем видео если на паузе
+            if (video && video.paused) {
+                video.muted = true;
+                video.play().catch(()=>{});
+            }
+            if (video && video.muted) video.muted = false;
+        } else if (currentFullscreenCard) {
+            // Восстанавливаем стили при выходе
+            if (currentFullscreenCard) {
+                const wrapper = currentFullscreenCard.querySelector('.video-wrapper');
+                if (wrapper) {
+                    wrapper.style.overflow = 'hidden';
+                    wrapper.style.touchAction = '';
+                }
+                const video = currentFullscreenCard.querySelector('video');
+                if (video) {
+                    video.style.objectFit = 'cover';
+                }
+            }
+            currentFullscreenCard = null;
+        }
+    }
+    
+    // ==================== ЗАПУСК ====================
     document.addEventListener('DOMContentLoaded', () => {
         renderGrid();
+        document.addEventListener('fullscreenchange', onFullscreenChange);
     });
 </script>
 </body>
