@@ -481,7 +481,7 @@
             e.preventDefault();
             const delta = e.deltaY > 0 ? 0.9 : 1.1;
             let newScale = scale * delta;
-            newScale = Math.min(Math.max(newScale, 1), 4);
+            newScale = Math.min(Math.max(newScale, 1), 10);
             if (newScale === scale) return;
             
             // При уменьшении до 1 сбрасываем позицию
@@ -561,7 +561,7 @@
                 const dy = touches[0].clientY - touches[1].clientY;
                 const dist = Math.hypot(dx, dy);
                 let newScale = initialScalePinch * (dist / initialPinch);
-                newScale = Math.min(Math.max(newScale, 1), 4);
+                newScale = Math.min(Math.max(newScale, 1), 10);
                 if (newScale !== scale) {
                     if (newScale === 1) {
                         reset();
