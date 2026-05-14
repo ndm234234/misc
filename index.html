@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>CityBay · Камеры</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234c9aff'%3E%3Cpath d='M18 10.5v-3c0-.83-.67-1.5-1.5-1.5h-11c-.83 0-1.5.67-1.5 1.5v9c0 .83.67 1.5 1.5 1.5h11c.83 0 1.5-.67 1.5-1.5v-3l4 4v-10l-4 4zM6.5 11.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5-1.5-.67-1.5-1.5z'/%3E%3C/svg%3E">
+    <!-- Запасная PNG иконка CCTV камеры -->
+    <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAo0lEQVQ4T2NkoBAwUqlQmEnM+NF7Etu5KkP9u4j8vXdjMQMMPyj0gGkYmFmZgFYw4rMcJQH+/8eznkL/MzHj8AADAwMjhX7g+M/w//9/pj9//jAyMjJiiAHjf/78gdoAx2D8gUG8/HA7sDEYf2CYYcP/Fzn+Hz0ekPVHjx7BNPz58wfM/v//P9lOoDgNk3ABmB0guwFmBoBFYdKUHc1UAM/eN5kS0ev9AAAAAElFTkSuQmCC">
     <style>
         * {
             margin: 0;
@@ -38,12 +41,12 @@
             cursor: pointer;
         }
 
-        .camera-card:hover {
-            transform: translateY(-5px);
-            background: rgba(22, 32, 55, 0.92);
-            box-shadow: 0 28px 44px -18px black;
-            border-color: rgba(100, 150, 255, 0.4);
-        }
+            .camera-card:hover {
+                transform: translateY(-5px);
+                background: rgba(22, 32, 55, 0.92);
+                box-shadow: 0 28px 44px -18px black;
+                border-color: rgba(100, 150, 255, 0.4);
+            }
 
         .video-wrapper {
             position: relative;
@@ -91,10 +94,10 @@
             gap: 6px;
         }
 
-        .fullscreen-badge::after {
-            content: "⛶";
-            font-size: 0.9rem;
-        }
+            .fullscreen-badge::after {
+                content: "⛶";
+                font-size: 0.9rem;
+            }
 
         .video-status {
             position: absolute;
@@ -141,7 +144,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* Полноэкранный оверлей */
@@ -180,9 +185,9 @@
             transition: transform 0.05s linear;
         }
 
-        .fullscreen-video:active {
-            cursor: grabbing;
-        }
+            .fullscreen-video:active {
+                cursor: grabbing;
+            }
 
         .fullscreen-exit-btn {
             position: fixed;
@@ -205,10 +210,10 @@
             font-weight: bold;
         }
 
-        .fullscreen-exit-btn:hover {
-            background: rgba(200, 50, 50, 0.9);
-            transform: scale(1.05);
-        }
+            .fullscreen-exit-btn:hover {
+                background: rgba(200, 50, 50, 0.9);
+                transform: scale(1.05);
+            }
 
         .fullscreen-title {
             position: fixed;
@@ -230,9 +235,11 @@
                 grid-template-columns: 1fr;
                 gap: 20px;
             }
+
             body {
                 padding: 16px;
             }
+
             .fullscreen-exit-btn {
                 top: 12px;
                 right: 12px;
@@ -240,6 +247,7 @@
                 height: 44px;
                 font-size: 22px;
             }
+
             .fullscreen-title {
                 top: 12px;
                 left: 12px;
