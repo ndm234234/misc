@@ -668,12 +668,7 @@
         const camTitle = getCameraTitle(streamUrl);
         titleSpan.innerText = camTitle;
         
-        const fsBadge = document.createElement('span');
-        fsBadge.className = 'fullscreen-badge';
-        fsBadge.innerText = 'Во весь экран';
-        
         camInfo.appendChild(titleSpan);
-        camInfo.appendChild(fsBadge);
         card.appendChild(videoWrapper);
         card.appendChild(camInfo);
         
