@@ -182,7 +182,6 @@
             object-fit: contain;
             cursor: grab;
             transform-origin: center center;
-            transition: transform 0.05s linear;
         }
 
             .fullscreen-video:active {
@@ -444,63 +443,88 @@
         videoElement.style.transform = 'scale(1)';
         videoElement.style.transformOrigin = 'center center';
         
-        let scale = 1;
-        let translateX = 0, translateY = 0;
+        // Цель (куда едем) и отображаемое состояние (что нарисовано)
+        let scale = 1, translateX = 0, translateY = 0;
+        let curScale = 1, curTX = 0, curTY = 0;
         let dragging = false;
+        let rafId = null;
         
-        function apply() {
-            videoElement.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+        // Скорость догонки и шаг зума колесом
+        const SMOOTH = 0.32;       // 0.25 мягче, 0.5 резче
+        const ZOOM_STEP = 1.18;    // +18% за тик колеса
+        
+        function applyDisplayed() {
+            videoElement.style.transform =
+                `translate(${curTX}px, ${curTY}px) scale(${curScale})`;
         }
         
-        // Базовые (нетрансформированные) размеры видео — offsetWidth/Height не учитывают transform
-        function getBaseSize() {
-            return { w: videoElement.offsetWidth, h: videoElement.offsetHeight };
+        function tick() {
+            const ds = scale - curScale;
+            const dx = translateX - curTX;
+            const dy = translateY - curTY;
+            if (Math.abs(ds) < 0.0005 && Math.abs(dx) < 0.3 && Math.abs(dy) < 0.3) {
+                curScale = scale; curTX = translateX; curTY = translateY;
+                applyDisplayed();
+                rafId = null;
+                return;
+            }
+            curScale += ds * SMOOTH;
+            curTX    += dx * SMOOTH;
+            curTY    += dy * SMOOTH;
+            applyDisplayed();
+            rafId = requestAnimationFrame(tick);
         }
         
-        // Ограничение сдвига на основе АКТУАЛЬНОГО масштаба (без чёрных полос)
+        function requestTick() {
+            if (rafId == null) rafId = requestAnimationFrame(tick);
+        }
+        
+        // Мгновенная синхронизация (для драга — без сглаживания)
+        function snap() {
+            curScale = scale; curTX = translateX; curTY = translateY;
+            applyDisplayed();
+            if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
+        }
+        
+        // Клампим ЦЕЛЬ — рендер плавно подтянется
         function clamp() {
             if (scale <= 1) {
                 scale = 1;
                 translateX = 0;
                 translateY = 0;
-                apply();
                 videoElement.style.cursor = 'default';
+                requestTick();
                 return;
             }
-            const base = getBaseSize();
+            const baseW = videoElement.offsetWidth;
+            const baseH = videoElement.offsetHeight;
             const wrapperRect = wrapper.getBoundingClientRect();
-            const scaledW = base.w * scale;
-            const scaledH = base.h * scale;
-            const maxX = Math.max(0, (scaledW - wrapperRect.width) / 2);
-            const maxY = Math.max(0, (scaledH - wrapperRect.height) / 2);
+            const maxX = Math.max(0, (baseW * scale - wrapperRect.width) / 2);
+            const maxY = Math.max(0, (baseH * scale - wrapperRect.height) / 2);
             translateX = Math.min(Math.max(translateX, -maxX), maxX);
             translateY = Math.min(Math.max(translateY, -maxY), maxY);
-            apply();
             videoElement.style.cursor = dragging ? 'grabbing' : 'grab';
+            requestTick();
         }
         
         function reset() {
-            scale = 1;
-            translateX = 0;
-            translateY = 0;
-            apply();
+            scale = 1; translateX = 0; translateY = 0;
             videoElement.style.cursor = 'default';
+            requestTick();
         }
         
         // ЗУМ КОЛЕСОМ относительно курсора (zoom-to-cursor)
         function onWheel(e) {
             e.preventDefault();
-            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            const delta = e.deltaY > 0 ? (1 / ZOOM_STEP) : ZOOM_STEP;
             let newScale = scale * delta;
             newScale = Math.min(Math.max(newScale, 1), 10);
             if (newScale === scale) return;
             
             const ratio = newScale / scale;
-            const wrapperRect = wrapper.getBoundingClientRect();
-            const cx = wrapperRect.left + wrapperRect.width / 2;
-            const cy = wrapperRect.top + wrapperRect.height / 2;
-            const mx = e.clientX - cx;
-            const my = e.clientY - cy;
+            const wr = wrapper.getBoundingClientRect();
+            const mx = e.clientX - (wr.left + wr.width / 2);
+            const my = e.clientY - (wr.top  + wr.height / 2);
             
             // Формула гарантирует, что точка под курсором остаётся на месте
             translateX = mx * (1 - ratio) + translateX * ratio;
@@ -526,11 +550,10 @@
         
         function onMouseMove(e) {
             if (!dragging) return;
-            const dx = e.clientX - startX;
-            const dy = e.clientY - startY;
-            translateX = startTX + dx;
-            translateY = startTY + dy;
+            translateX = startTX + (e.clientX - startX);
+            translateY = startTY + (e.clientY - startY);
             clamp();
+            snap(); // драг — 1:1 без догонки
         }
         
         function onMouseUp() {
@@ -591,6 +614,7 @@
                 translateX += deltaX;
                 translateY += deltaY;
                 clamp();
+                snap(); // pan пальцем — 1:1 без догонки
                 lastX = touches[0].clientX;
                 lastY = touches[0].clientY;
             }
@@ -622,13 +646,18 @@
         }
         window.addEventListener('resize', onResize);
         
-        videoElement._fsHandlers = { onWheel, onMouseDown, onMouseMove, onMouseUp, onDoubleClick, onTouchStart, onTouchMove, onTouchEnd, onResize };
+        function cancelAnim() {
+            if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
+        }
+        
+        videoElement._fsHandlers = { onWheel, onMouseDown, onMouseMove, onMouseUp, onDoubleClick, onTouchStart, onTouchMove, onTouchEnd, onResize, cancelAnim };
     }
     
     function exitFullscreen() {
         if (!currentFullscreenData) return;
         const { overlay, originalWrapper, video } = currentFullscreenData;
         if (video._fsHandlers) {
+            video._fsHandlers.cancelAnim();
             video.removeEventListener('wheel', video._fsHandlers.onWheel);
             video.removeEventListener('mousedown', video._fsHandlers.onMouseDown);
             video.removeEventListener('dblclick', video._fsHandlers.onDoubleClick);
