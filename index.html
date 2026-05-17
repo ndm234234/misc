@@ -446,27 +446,37 @@
         
         let scale = 1;
         let translateX = 0, translateY = 0;
+        let dragging = false;
         
         function apply() {
             videoElement.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
         }
         
-        // Правильное ограничение сдвига на основе текущего размера видео и контейнера
+        // Базовые (нетрансформированные) размеры видео — offsetWidth/Height не учитывают transform
+        function getBaseSize() {
+            return { w: videoElement.offsetWidth, h: videoElement.offsetHeight };
+        }
+        
+        // Ограничение сдвига на основе АКТУАЛЬНОГО масштаба (без чёрных полос)
         function clamp() {
             if (scale <= 1) {
+                scale = 1;
                 translateX = 0;
                 translateY = 0;
                 apply();
+                videoElement.style.cursor = 'default';
                 return;
             }
-            const videoRect = videoElement.getBoundingClientRect();
+            const base = getBaseSize();
             const wrapperRect = wrapper.getBoundingClientRect();
-            // Допустимые пределы сдвига, чтобы видео не выходило за края
-            const maxX = Math.max(0, (videoRect.width - wrapperRect.width) / 2);
-            const maxY = Math.max(0, (videoRect.height - wrapperRect.height) / 2);
+            const scaledW = base.w * scale;
+            const scaledH = base.h * scale;
+            const maxX = Math.max(0, (scaledW - wrapperRect.width) / 2);
+            const maxY = Math.max(0, (scaledH - wrapperRect.height) / 2);
             translateX = Math.min(Math.max(translateX, -maxX), maxX);
             translateY = Math.min(Math.max(translateY, -maxY), maxY);
             apply();
+            videoElement.style.cursor = dragging ? 'grabbing' : 'grab';
         }
         
         function reset() {
@@ -474,9 +484,10 @@
             translateX = 0;
             translateY = 0;
             apply();
+            videoElement.style.cursor = 'default';
         }
         
-        // ЗУМ КОЛЕСОМ (относительно центра, с корректным ограничением)
+        // ЗУМ КОЛЕСОМ относительно курсора (zoom-to-cursor)
         function onWheel(e) {
             e.preventDefault();
             const delta = e.deltaY > 0 ? 0.9 : 1.1;
@@ -484,22 +495,21 @@
             newScale = Math.min(Math.max(newScale, 1), 10);
             if (newScale === scale) return;
             
-            // При уменьшении до 1 сбрасываем позицию
-            if (newScale === 1) {
-                reset();
-                return;
-            }
-            
-            // Корректируем сдвиг пропорционально изменению масштаба
             const ratio = newScale / scale;
-            translateX *= ratio;
-            translateY *= ratio;
+            const wrapperRect = wrapper.getBoundingClientRect();
+            const cx = wrapperRect.left + wrapperRect.width / 2;
+            const cy = wrapperRect.top + wrapperRect.height / 2;
+            const mx = e.clientX - cx;
+            const my = e.clientY - cy;
+            
+            // Формула гарантирует, что точка под курсором остаётся на месте
+            translateX = mx * (1 - ratio) + translateX * ratio;
+            translateY = my * (1 - ratio) + translateY * ratio;
             scale = newScale;
             clamp();
         }
         
         // ПЕРЕТАСКИВАНИЕ МЫШЬЮ
-        let dragging = false;
         let startX = 0, startY = 0;
         let startTX = 0, startTY = 0;
         
@@ -524,14 +534,13 @@
         }
         
         function onMouseUp() {
+            if (!dragging) return;
             dragging = false;
             videoElement.style.cursor = scale > 1 ? 'grab' : 'default';
         }
         
         // МОБИЛЬНЫЕ ЖЕСТЫ
         let initialPinch = 0;
-        let initialScalePinch = 1;
-        let initialTX = 0, initialTY = 0;
         let isPan = false;
         let lastX = 0, lastY = 0;
         
@@ -542,9 +551,6 @@
                 const dx = touches[0].clientX - touches[1].clientX;
                 const dy = touches[0].clientY - touches[1].clientY;
                 initialPinch = Math.hypot(dx, dy);
-                initialScalePinch = scale;
-                initialTX = translateX;
-                initialTY = translateY;
                 isPan = false;
             } else if (touches.length === 1 && scale > 1) {
                 isPan = true;
@@ -560,19 +566,25 @@
                 const dx = touches[0].clientX - touches[1].clientX;
                 const dy = touches[0].clientY - touches[1].clientY;
                 const dist = Math.hypot(dx, dy);
-                let newScale = initialScalePinch * (dist / initialPinch);
+                let newScale = scale * (dist / initialPinch);
                 newScale = Math.min(Math.max(newScale, 1), 10);
                 if (newScale !== scale) {
-                    if (newScale === 1) {
-                        reset();
-                    } else {
-                        const ratio = newScale / scale;
-                        translateX = initialTX * ratio;
-                        translateY = initialTY * ratio;
-                        scale = newScale;
-                        clamp();
-                    }
+                    const ratio = newScale / scale;
+                    // Центр пинча на экране
+                    const pinchX = (touches[0].clientX + touches[1].clientX) / 2;
+                    const pinchY = (touches[0].clientY + touches[1].clientY) / 2;
+                    const wrapperRect = wrapper.getBoundingClientRect();
+                    const cx = wrapperRect.left + wrapperRect.width / 2;
+                    const cy = wrapperRect.top + wrapperRect.height / 2;
+                    const mx = pinchX - cx;
+                    const my = pinchY - cy;
+                    translateX = mx * (1 - ratio) + translateX * ratio;
+                    translateY = my * (1 - ratio) + translateY * ratio;
+                    scale = newScale;
+                    clamp();
                 }
+                // Обновляем базу для непрерывного пинча
+                initialPinch = dist;
             } else if (touches.length === 1 && isPan && scale > 1) {
                 const deltaX = touches[0].clientX - lastX;
                 const deltaY = touches[0].clientY - lastY;
