@@ -180,12 +180,12 @@
             height: auto;
             max-height: 100%;
             object-fit: contain;
-            cursor: grab;
+            cursor: default;
             transform-origin: center center;
         }
 
             .fullscreen-video:active {
-                cursor: grabbing;
+                cursor: default;
             }
 
         .fullscreen-exit-btn {
@@ -560,7 +560,7 @@
             const maxY = Math.max(0, (baseH * scale - wrapperRect.height) / 2);
             translateX = Math.min(Math.max(translateX, -maxX), maxX);
             translateY = Math.min(Math.max(translateY, -maxY), maxY);
-            videoElement.style.cursor = dragging ? 'grabbing' : 'grab';
+            videoElement.style.cursor = dragging ? 'grabbing' : 'default';
             updateZoomLabel();
             requestTick();
         }
@@ -618,7 +618,7 @@
         function onMouseUp() {
             if (!dragging) return;
             dragging = false;
-            videoElement.style.cursor = scale > 1 ? 'grab' : 'default';
+            videoElement.style.cursor = scale > 1 ? 'default' : 'default';
         }
         
         // МОБИЛЬНЫЕ ЖЕСТЫ
