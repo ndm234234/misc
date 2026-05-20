@@ -184,16 +184,16 @@
             transform-origin: center center;
         }
 
-            .fullscreen-video:active {
-                cursor: default;
+            .fullscreen-video[data-zoomed="true"]:active {
+                cursor: grabbing;
             }
 
         .fullscreen-exit-btn {
             position: fixed;
             top: 20px;
             right: 20px;
-            width: 50px;
-            height: 50px;
+            width: 40px;
+            height: 40px;
             background: rgba(0, 0, 0, 0.7);
             backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.3);
@@ -204,7 +204,7 @@
             cursor: pointer;
             z-index: 10001;
             transition: all 0.2s ease;
-            font-size: 26px;
+            font-size: 20px;
             color: white;
             font-weight: bold;
         }
@@ -279,9 +279,9 @@
             .fullscreen-exit-btn {
                 top: 12px;
                 right: 12px;
-                width: 44px;
-                height: 44px;
-                font-size: 22px;
+                width: 36px;
+                height: 36px;
+                font-size: 18px;
             }
 
             .fullscreen-title {
@@ -548,7 +548,7 @@
                 scale = 1;
                 translateX = 0;
                 translateY = 0;
-                videoElement.style.cursor = 'default';
+                videoElement.dataset.zoomed = '';
                 updateZoomLabel();
                 requestTick();
                 return;
@@ -560,14 +560,16 @@
             const maxY = Math.max(0, (baseH * scale - wrapperRect.height) / 2);
             translateX = Math.min(Math.max(translateX, -maxX), maxX);
             translateY = Math.min(Math.max(translateY, -maxY), maxY);
-            videoElement.style.cursor = dragging ? 'grabbing' : 'default';
+            // Курсором рулит CSS через [data-zoomed="true"]:active —
+            // браузер мгновенно показывает `grabbing` в момент нажатия.
+            videoElement.dataset.zoomed = 'true';
             updateZoomLabel();
             requestTick();
         }
         
         function reset() {
             scale = 1; translateX = 0; translateY = 0;
-            videoElement.style.cursor = 'default';
+            videoElement.dataset.zoomed = '';
             updateZoomLabel();
             requestTick();
         }
@@ -595,56 +597,91 @@
         // ПЕРЕТАСКИВАНИЕ МЫШЬЮ
         let startX = 0, startY = 0;
         let startTX = 0, startTY = 0;
+        let mouseDownActive = false;
+        let mouseDownX = 0, mouseDownY = 0;
+        const DRAG_THRESHOLD = 5; // px — порог различения клика и драга
         
         function onMouseDown(e) {
+            if (e.button !== 0) return; // только левая кнопка
             if (scale <= 1) return;
-            e.preventDefault();
-            dragging = true;
+            // НЕ включаем драг сразу и НЕ зовём preventDefault —
+            // иначе ломается связка click → dblclick и срываются клики на возврат.
+            // Курсор `grabbing` ставит CSS через [data-zoomed="true"]:active —
+            // браузер обновит его мгновенно, без ожидания mousemove.
+            mouseDownActive = true;
+            mouseDownX = e.clientX;
+            mouseDownY = e.clientY;
             startX = e.clientX;
             startY = e.clientY;
             startTX = translateX;
             startTY = translateY;
-            videoElement.style.cursor = 'grabbing';
         }
         
         function onMouseMove(e) {
-            if (!dragging) return;
+            if (!mouseDownActive) return;
+            if (!dragging) {
+                const dx = e.clientX - mouseDownX;
+                const dy = e.clientY - mouseDownY;
+                if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+                dragging = true;
+            }
             translateX = startTX + (e.clientX - startX);
             translateY = startTY + (e.clientY - startY);
             clamp();
             snap(); // драг — 1:1 без догонки
         }
         
-        function onMouseUp() {
-            if (!dragging) return;
+        function onMouseUp(e) {
+            if (!mouseDownActive) return;
+            mouseDownActive = false;
             dragging = false;
-            videoElement.style.cursor = scale > 1 ? 'default' : 'default';
         }
         
         // МОБИЛЬНЫЕ ЖЕСТЫ
         let initialPinch = 0;
         let isPan = false;
         let lastX = 0, lastY = 0;
+        let touchStartTime = 0;
+        let touchStartX = 0, touchStartY = 0;
+        let touchMoved = false;
+        let lastTapTime = 0;
+        let lastTapX = 0, lastTapY = 0;
+        const TAP_MOVE_THRESHOLD = 10;  // px
+        const TAP_MAX_DURATION = 300;   // ms
+        const DBLTAP_MAX_DELAY = 320;   // ms
+        const DBLTAP_DIST = 35;         // px
         
         function onTouchStart(e) {
-            e.preventDefault();
             const touches = e.touches;
             if (touches.length === 2) {
+                e.preventDefault();
                 const dx = touches[0].clientX - touches[1].clientX;
                 const dy = touches[0].clientY - touches[1].clientY;
                 initialPinch = Math.hypot(dx, dy);
                 isPan = false;
-            } else if (touches.length === 1 && scale > 1) {
-                isPan = true;
-                lastX = touches[0].clientX;
-                lastY = touches[0].clientY;
+                touchMoved = true; // двухпальцевый жест — не тап
+            } else if (touches.length === 1) {
+                touchStartTime = Date.now();
+                touchStartX = touches[0].clientX;
+                touchStartY = touches[0].clientY;
+                touchMoved = false;
+                if (scale > 1) {
+                    // только при зуме перехватываем тач, чтобы панорамировать
+                    e.preventDefault();
+                    isPan = true;
+                    lastX = touches[0].clientX;
+                    lastY = touches[0].clientY;
+                }
+                // При scale=1 НЕ зовём preventDefault, чтобы браузер мог
+                // нормально пропускать тапы — наш собственный детектор
+                // двойного тапа сработает по touchend.
             }
         }
         
         function onTouchMove(e) {
-            e.preventDefault();
             const touches = e.touches;
             if (touches.length === 2 && initialPinch > 0) {
+                e.preventDefault();
                 const dx = touches[0].clientX - touches[1].clientX;
                 const dy = touches[0].clientY - touches[1].clientY;
                 const dist = Math.hypot(dx, dy);
@@ -667,21 +704,62 @@
                 }
                 // Обновляем базу для непрерывного пинча
                 initialPinch = dist;
-            } else if (touches.length === 1 && isPan && scale > 1) {
-                const deltaX = touches[0].clientX - lastX;
-                const deltaY = touches[0].clientY - lastY;
-                translateX += deltaX;
-                translateY += deltaY;
-                clamp();
-                snap(); // pan пальцем — 1:1 без догонки
-                lastX = touches[0].clientX;
-                lastY = touches[0].clientY;
+            } else if (touches.length === 1) {
+                const dx = touches[0].clientX - touchStartX;
+                const dy = touches[0].clientY - touchStartY;
+                if (Math.hypot(dx, dy) > TAP_MOVE_THRESHOLD) {
+                    touchMoved = true;
+                }
+                if (isPan && scale > 1) {
+                    e.preventDefault();
+                    const deltaX = touches[0].clientX - lastX;
+                    const deltaY = touches[0].clientY - lastY;
+                    translateX += deltaX;
+                    translateY += deltaY;
+                    clamp();
+                    snap(); // pan пальцем — 1:1 без догонки
+                    lastX = touches[0].clientX;
+                    lastY = touches[0].clientY;
+                }
             }
         }
         
         function onTouchEnd(e) {
             if (e.touches.length < 2) initialPinch = 0;
-            if (e.touches.length === 0) isPan = false;
+            if (e.touches.length > 0) return;
+            isPan = false;
+            const now = Date.now();
+            const dt = now - touchStartTime;
+            // Считаем «тапом», только если палец почти не сдвинулся
+            // и контакт был коротким.
+            if (touchMoved || dt > TAP_MAX_DURATION) {
+                lastTapTime = 0;
+                return;
+            }
+            const tx = touchStartX, ty = touchStartY;
+            // Собственный детектор двойного тапа: работает и для zoom-in,
+            // и для возврата обратно — единое поведение с мышью (dblclick).
+            const isDblTap =
+                now - lastTapTime < DBLTAP_MAX_DELAY &&
+                Math.hypot(tx - lastTapX, ty - lastTapY) < DBLTAP_DIST;
+            if (!isDblTap) {
+                lastTapTime = now;
+                lastTapX = tx;
+                lastTapY = ty;
+                return;
+            }
+            lastTapTime = 0;
+            if (scale > 1) {
+                reset();
+            } else {
+                const wr = wrapper.getBoundingClientRect();
+                const mx = tx - (wr.left + wr.width / 2);
+                const my = ty - (wr.top + wr.height / 2);
+                scale = DBL_ZOOM;
+                translateX = mx * (1 - DBL_ZOOM);
+                translateY = my * (1 - DBL_ZOOM);
+                clamp();
+            }
         }
         
         const DBL_ZOOM = 5; // «подлёт» по двойному клику
@@ -718,11 +796,19 @@
         }
         window.addEventListener('resize', onResize);
         
+        function onKeyDown(e) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                exitFullscreen();
+            }
+        }
+        window.addEventListener('keydown', onKeyDown);
+        
         function cancelAnim() {
             if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
         }
         
-        videoElement._fsHandlers = { onWheel, onMouseDown, onMouseMove, onMouseUp, onDoubleClick, onTouchStart, onTouchMove, onTouchEnd, onResize, cancelAnim };
+        videoElement._fsHandlers = { onWheel, onMouseDown, onMouseMove, onMouseUp, onDoubleClick, onTouchStart, onTouchMove, onTouchEnd, onResize, onKeyDown, cancelAnim };
     }
     
     function exitFullscreen() {
@@ -743,6 +829,7 @@
             video.removeEventListener('touchmove', video._fsHandlers.onTouchMove);
             video.removeEventListener('touchend', video._fsHandlers.onTouchEnd);
             window.removeEventListener('resize', video._fsHandlers.onResize);
+            window.removeEventListener('keydown', video._fsHandlers.onKeyDown);
             delete video._fsHandlers;
         }
         video.classList.remove('fullscreen-video');
@@ -753,6 +840,7 @@
         video.style.objectFit = 'cover';
         video.style.transform = '';
         video.style.cursor = '';
+        delete video.dataset.zoomed;
         originalWrapper.appendChild(video);
         overlay.remove();
         document.body.style.overflow = '';
