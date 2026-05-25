@@ -727,6 +727,10 @@
         function onTouchEnd(e) {
             if (e.touches.length < 2) initialPinch = 0;
             if (e.touches.length > 0) return;
+            // Гасим синтезированный браузером click/dblclick от тача —
+            // иначе после нашего двойного тапа дополнительно сработает
+            // onDoubleClick и зум сразу вернётся обратно.
+            e.preventDefault();
             isPan = false;
             const now = Date.now();
             const dt = now - touchStartTime;
@@ -787,7 +791,7 @@
         window.addEventListener('mouseup', onMouseUp);
         videoElement.addEventListener('touchstart', onTouchStart, { passive: false });
         videoElement.addEventListener('touchmove', onTouchMove, { passive: false });
-        videoElement.addEventListener('touchend', onTouchEnd);
+        videoElement.addEventListener('touchend', onTouchEnd, { passive: false });
         
         function onResize() {
             if (currentFullscreenData?.video === videoElement) {
