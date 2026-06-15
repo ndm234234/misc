@@ -24,36 +24,57 @@
 ```proto
 rpc CanCreateChild(CanCreateChildRequest) returns (CanCreateChildResponse);
 
+enum CanCreateChildReason {
+  CAN_CREATE_CHILD_REASON_UNSPECIFIED = 0;
+  CAN_CREATE_CHILD_REASON_ALLOWED = 1;
+  CAN_CREATE_CHILD_REASON_UNSUPPORTED_CHILD_TYPE = 2;
+  CAN_CREATE_CHILD_REASON_LIMIT_REACHED = 3;
+  CAN_CREATE_CHILD_REASON_INVALID_CHILD_PARAMS = 4;
+  CAN_CREATE_CHILD_REASON_PARENT_NOT_FOUND = 5;
+  CAN_CREATE_CHILD_REASON_PARENT_NOT_READY = 6;
+  CAN_CREATE_CHILD_REASON_LICENSE_RESTRICTED = 7;
+  CAN_CREATE_CHILD_REASON_EXTERNAL_SYSTEM_UNAVAILABLE = 8;
+}
+
 message CanCreateChildRequest {
   ObjectReference parent = 1;
   ObjectType child_type = 2;
-  google.protobuf.Struct child_params = 3;
 }
 
 message CanCreateChildResponse {
   bool allowed = 1;
-  string reason_code = 2;
+  CanCreateChildReason reason = 2;
   string reason_message = 3;
   optional uint32 current_count = 4;
   optional uint32 max_count = 5;
 }
 ```
 
+`reason` — стандартная машинно-читаемая причина решения. Платформа может использовать её для стабильной логики UI, логирования и аналитики.
+
+`reason_message` — человекочитаемое объяснение для оператора и логов. Оно не должно использоваться как машинный код.
+
 ## Поток работы платформы
 
-Когда оператор создаёт дочерний объект:
+Когда оператор выбирает родительский объект:
 
-1. Платформа проверяет статическую топологию из `plugin.json`.
-2. Если топология допускает такой дочерний тип, платформа вызывает `Plugin.CanCreateChild`.
-3. Если `allowed = true`, платформа разрешает создание объекта.
-4. Если `allowed = false`, платформа отклоняет создание и показывает оператору причину из `reason_message`.
+1. Платформа проверяет статическую топологию из `plugin.json` и получает список структурно возможных дочерних типов.
+2. Для каждого такого дочернего типа платформа вызывает `Plugin.CanCreateChild`.
+3. Если `allowed = true`, платформа показывает оператору действие создания этого дочернего типа.
+4. Если `allowed = false`, платформа не показывает оператору действие создания этого дочернего типа.
+
+`allowed = false` означает, что в штатном UI у оператора вообще не должно быть возможности начать создание такого объекта: не должно быть пункта меню, кнопки, wizard-шага или диалога создания.
+
+`reason` и `reason_message` в этом случае нужны для логов, диагностики, аналитики и опционального административного UI. Они не означают, что оператор должен сначала попытаться создать объект, а затем получить ошибку. В штатном операторском UI попытки создания быть не должно.
+
+Перед фактическим созданием объекта на этапе конфигурирования платформа должна повторить проверку `CanCreateChild`, чтобы исключить гонки состояния: другой оператор мог уже добавить дочерний объект в конфигурацию, лимит мог измениться, устройство могло перейти в другое состояние. Речь идёт именно о создании/изменении конфигурации в платформе, а не о runtime-работе уже настроенного объекта.
 
 Пример: `CONTROLLER` в целом может иметь дочерние `SENSOR`, но конкретный контроллер разрешает не более двух датчиков. Тогда плагин может вернуть:
 
 ```proto
 CanCreateChildResponse {
   allowed: false
-  reason_code: "LIMIT_REACHED"
+  reason: CAN_CREATE_CHILD_REASON_LIMIT_REACHED
   reason_message: "Controller already has the maximum number of sensors"
   current_count: 2
   max_count: 2
